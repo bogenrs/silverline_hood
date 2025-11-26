@@ -88,61 +88,36 @@ class SilverlineHoodCoordinator(DataUpdateCoordinator):
             name=DOMAIN,
             update_interval=timedelta(seconds=update_interval),
         )
-async def send_raw_command(self, raw_command: str) -> bool:
-    """Send a raw command for testing purposes."""
-    try:
-        # Parse the JSON to validate it
-        command_data = json.loads(raw_command)
-        
-        _LOGGER.info("Sending raw command: %s", raw_command)
-        
-        # Connect and handle initial response
-        reader, writer = await self._connect_and_read_initial()
-        
-        # Try different formats
-        formats = [
-            raw_command + '\n',
-            raw_command + '\r\n', 
-            raw_command,
-        ]
-        
-        for fmt in formats:
-            _LOGGER.debug("Trying raw format: %s", repr(fmt))
-            writer.write(fmt.encode())
-            await writer.drain()
-            await asyncio.sleep(1)
-        
-        writer.close()
-        await writer.wait_closed()
-        
-        return True
-        
-    except Exception as ex:
-        _LOGGER.error("Error sending raw command: %s", ex)
-        return False
-    
+
     async def _async_update_data(self) -> Dict[str, Any]:
         """Fetch data from the hood."""
         try:
             return await self._query_status()
         except Exception as ex:
-            raise UpdateFailed(f"Error communicating with Silverline Hood: {ex}")
+            _LOGGER.debug("Error querying status, returning last known state: %s", ex)
+            # Return last known state instead of raising exception for initial setup
+            return self._last_sent_state
 
     async def _connect_and_read_initial(self):
         """Connect and read the initial 'okidargb' response."""
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(self.host, self.port), timeout=10
-        )
-        
-        # Read initial response (should be "okidargb")
         try:
-            initial_response = await asyncio.wait_for(reader.read(100), timeout=3)
-            initial_str = initial_response.decode().strip()
-            _LOGGER.debug("Initial response from %s:%s: '%s'", self.host, self.port, initial_str)
-        except asyncio.TimeoutError:
-            _LOGGER.debug("No initial response received from %s:%s", self.host, self.port)
-        
-        return reader, writer
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(self.host, self.port), timeout=10
+            )
+            
+            # Read initial response (should be "okidargb")
+            try:
+                initial_response = await asyncio.wait_for(reader.read(100), timeout=3)
+                initial_str = initial_response.decode().strip()
+                _LOGGER.debug("Initial response from %s:%s: '%s'", self.host, self.port, initial_str)
+            except asyncio.TimeoutError:
+                _LOGGER.debug("No initial response received from %s:%s", self.host, self.port)
+            
+            return reader, writer
+            
+        except Exception as ex:
+            _LOGGER.error("Failed to connect to %s:%s: %s", self.host, self.port, ex)
+            raise
 
     async def _query_status(self) -> Dict[str, Any]:
         """Query the current status from the hood."""
@@ -194,12 +169,10 @@ async def send_raw_command(self, raw_command: str) -> bool:
             _LOGGER.debug("No valid status response, returning last known state")
             return self._last_sent_state
                 
-        except asyncio.TimeoutError:
-            _LOGGER.error("Timeout querying Silverline Hood at %s:%s", self.host, self.port)
-            raise
         except Exception as ex:
-            _LOGGER.error("Error querying Silverline Hood at %s:%s: %s", self.host, self.port, ex)
-            raise
+            _LOGGER.debug("Error querying Silverline Hood at %s:%s: %s", self.host, self.port, ex)
+            # Return last known state instead of raising exception
+            return self._last_sent_state
 
     async def send_command(self, command: Dict[str, Any]) -> bool:
         """Send command to the Silverline Hood via Telnet."""
@@ -257,6 +230,8 @@ async def send_raw_command(self, raw_command: str) -> bool:
             
             if success:
                 _LOGGER.info("Successfully sent command to Silverline Hood")
+                # Update our internal state immediately
+                self.data = self._last_sent_state.copy()
                 # Request immediate refresh to get updated status
                 await self.async_request_refresh()
                 return True
