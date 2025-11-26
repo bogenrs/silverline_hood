@@ -39,11 +39,13 @@ async def async_setup_entry(
 class SilverlineHoodLight(CoordinatorEntity, LightEntity):
     """Representation of a Silverline Hood Light."""
 
+    _attr_has_entity_name = True
+    _attr_name = None
+
     def __init__(self, coordinator):
         """Initialize the light."""
         super().__init__(coordinator)
-        self._attr_name = "Silverline Hood Light"
-        self._attr_unique_id = f"{coordinator.host}_light"
+        self._attr_unique_id = f"{coordinator.host}_{coordinator.port}_light"
         self._attr_supported_color_modes = {ColorMode.RGBW}
         self._attr_color_mode = ColorMode.RGBW
 
@@ -51,7 +53,7 @@ class SilverlineHoodLight(CoordinatorEntity, LightEntity):
     def device_info(self):
         """Return device information."""
         return {
-            "identifiers": {(DOMAIN, self.coordinator.host)},
+            "identifiers": {(DOMAIN, f"{self.coordinator.host}_{self.coordinator.port}")},
             "name": "Silverline Hood",
             "manufacturer": "Silverline",
             "model": "Smart Hood",
@@ -59,12 +61,29 @@ class SilverlineHoodLight(CoordinatorEntity, LightEntity):
         }
 
     @property
+    def name(self) -> str:
+        """Return the name of the light."""
+        return "Light"
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return self.coordinator.last_update_success
+
+    @property
     def extra_state_attributes(self):
         """Return additional state attributes."""
+        state = self.coordinator.current_state
         return {
             "update_interval_seconds": self.coordinator.update_interval_seconds(),
             "host": self.coordinator.host,
             "port": self.coordinator.port,
+            "current_light_state": state.get(CMD_LIGHT, 0),
+            "current_red": state.get(CMD_RED, 255),
+            "current_green": state.get(CMD_GREEN, 255),
+            "current_blue": state.get(CMD_BLUE, 255),
+            "current_cold_white": state.get(CMD_COLD_WHITE, 255),
+            "current_brightness": state.get(CMD_BRIGHTNESS, 255),
         }
 
     @property
@@ -102,8 +121,10 @@ class SilverlineHoodLight(CoordinatorEntity, LightEntity):
             command[CMD_BLUE] = rgbw[2]
             command[CMD_COLD_WHITE] = rgbw[3]
 
+        _LOGGER.debug("Turning on light with command: %s", command)
         await self.coordinator.send_command(command)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Instruct the light to turn off."""
+        _LOGGER.debug("Turning off light")
         await self.coordinator.send_command({CMD_LIGHT: 0})
