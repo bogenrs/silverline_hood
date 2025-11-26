@@ -177,4 +177,20 @@ class SilverlineHoodCoordinator(DataUpdateCoordinator):
             
             _LOGGER.debug("Sent command to %s:%s: %s", self.host, self.port, json_command.strip())
             
-            #
+            # Request immediate refresh to get updated status
+            await self.async_request_refresh()
+            
+            return True
+            
+        except Exception as ex:
+            _LOGGER.error("Error sending command to Silverline Hood: %s", ex)
+            return False
+
+    @property
+    def current_state(self) -> Dict[str, Any]:
+        """Return current state from coordinator data."""
+        return self.data if self.data else self._last_sent_state
+
+    def update_interval_seconds(self) -> int:
+        """Return current update interval in seconds."""
+        return int(self.update_interval.total_seconds())
