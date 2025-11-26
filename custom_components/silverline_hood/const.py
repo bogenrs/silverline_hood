@@ -1,9 +1,11 @@
 """Constants for the Silverline Hood integration."""
 DOMAIN = "silverline_hood"
 DEFAULT_PORT = 8555
+DEFAULT_UPDATE_INTERVAL = 10  # Diese Zeile fehlte!
 
 CONF_HOST = "host"
 CONF_PORT = "port"
+CONF_UPDATE_INTERVAL = "update_interval"  # Diese auch
 
 # JSON command keys - Basis
 CMD_MOTOR = "M"
@@ -41,3 +43,7 @@ SPEED_LIST = ["off", "low", "medium", "high", "max"]
 STATUS_QUERY = {"A": 4}
 DEVICE_IDENTIFIER = "okidargb"
 CMD_LINE_ENDING = '\r'
+
+# Update interval constraints
+MIN_UPDATE_INTERVAL = 5  # seconds
+MAX_UPDATE_INTERVAL = 300  # seconds
