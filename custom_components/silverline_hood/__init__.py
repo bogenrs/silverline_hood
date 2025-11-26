@@ -10,20 +10,11 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 import voluptuous as vol
 
-from .const import DOMAIN, CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = ["fan", "light"]
-
-# Service schemas
-SERVICE_TEST_EXACT_COMMAND_SCHEMA = vol.Schema({
-    vol.Required("command_type"): cv.string,
-})
-
-SERVICE_SEND_RAW_BYTES_SCHEMA = vol.Schema({
-    vol.Required("command"): cv.string,
-})
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -41,54 +32,64 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
-    # Set up options update listener
-    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
-
     # Setup platforms
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # Register services
-    async def async_test_exact_command(call: ServiceCall):
-        """Service to test exact commands."""
-        command_type = call.data.get("command_type")
+    # Register services nach dem Platform-Setup
+    async def handle_test_exact_command(call: ServiceCall):
+        """Handle test exact command service."""
+        command_type = call.data.get("command_type", "status_query")
         _LOGGER.info("Service called: test_exact_command with type: %s", command_type)
         result = await coordinator.send_exact_command(command_type)
         _LOGGER.info("Service result: %s", result)
 
-    async def async_send_raw_bytes(call: ServiceCall):
-        """Service to send raw bytes."""
-        command = call.data.get("command")
+    async def handle_send_raw_bytes(call: ServiceCall):
+        """Handle send raw bytes service."""
+        command = call.data.get("command", '{"A":4}\r')
         _LOGGER.info("Service called: send_raw_bytes with command: %s", repr(command))
         result = await coordinator.send_raw_command(command)
         _LOGGER.info("Service result: %s", result)
 
-    async def async_query_status(call: ServiceCall):
-        """Service to query status."""
+    async def handle_query_status(call: ServiceCall):
+        """Handle query status service."""
         _LOGGER.info("Service called: query_status")
         result = await coordinator.send_exact_command("status_query")
         _LOGGER.info("Status query result: %s", result)
 
-    # Register services
+    # Service-Schemas
+    test_command_schema = vol.Schema({
+        vol.Required("command_type", default="status_query"): vol.In([
+            "light_on", "light_off", "fan_speed_1", "fan_speed_2", 
+            "fan_speed_3", "fan_off", "status_query"
+        ])
+    })
+
+    raw_bytes_schema = vol.Schema({
+        vol.Required("command", default='{"A":4}\r'): cv.string
+    })
+
+    # Services registrieren
     hass.services.async_register(
-        DOMAIN, 
-        "test_exact_command", 
-        async_test_exact_command,
-        schema=SERVICE_TEST_EXACT_COMMAND_SCHEMA
+        DOMAIN,
+        "test_exact_command",
+        handle_test_exact_command,
+        schema=test_command_schema
     )
     
     hass.services.async_register(
-        DOMAIN, 
-        "send_raw_bytes", 
-        async_send_raw_bytes,
-        schema=SERVICE_SEND_RAW_BYTES_SCHEMA
+        DOMAIN,
+        "send_raw_bytes",
+        handle_send_raw_bytes,
+        schema=raw_bytes_schema
     )
     
     hass.services.async_register(
-        DOMAIN, 
-        "query_status", 
-        async_query_status
+        DOMAIN,
+        "query_status",
+        handle_query_status
     )
 
+    _LOGGER.info("Silverline Hood integration setup completed with services")
     return True
 
 
@@ -107,13 +108,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return unload_ok
 
 
-async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload config entry when options are changed."""
-    await hass.config_entries.async_reload(entry.entry_id)
-
-
 class SilverlineHoodCoordinator:
-    """Test coordinator that mimics exact app communication."""
+    """Simple coordinator for Silverline Hood communication."""
 
     def __init__(self, hass: HomeAssistant, host: str, port: int):
         """Initialize the coordinator."""
@@ -177,9 +173,7 @@ class SilverlineHoodCoordinator:
                 initial_response = await asyncio.wait_for(reader.read(100), timeout=5)
                 initial_str = initial_response.decode()
                 _LOGGER.info("✓ Initial response received: %s", repr(initial_str))
-                _LOGGER.info("  Response bytes: %s", [hex(b) for b in initial_response])
                 
-                # Check if we got the expected response
                 if "okidargb" in initial_str:
                     _LOGGER.info("✓ Received expected 'okidargb' response")
                 else:
@@ -187,12 +181,9 @@ class SilverlineHoodCoordinator:
                     
             except asyncio.TimeoutError:
                 _LOGGER.warning("⚠ No initial response received within 5 seconds")
-                initial_str = ""
             
             # Send the exact command
             _LOGGER.info("Sending command...")
-            _LOGGER.info("  Bytes to send: %s", [hex(b) for b in command_str.encode()])
-            
             writer.write(command_str.encode())
             await writer.drain()
             _LOGGER.info("✓ Command sent and flushed")
@@ -204,7 +195,6 @@ class SilverlineHoodCoordinator:
                 if response:
                     response_str = response.decode()
                     _LOGGER.info("✓ Command response received: %s", repr(response_str))
-                    _LOGGER.info("  Response bytes: %s", [hex(b) for b in response])
                     
                     # Try to parse JSON if possible
                     try:
@@ -216,8 +206,8 @@ class SilverlineHoodCoordinator:
                             self._state.update(response_json)
                             _LOGGER.info("✓ Updated internal state from response")
                             
-                    except json.JSONDecodeError as e:
-                        _LOGGER.info("ℹ Response is not JSON: %s", e)
+                    except json.JSONDecodeError:
+                        _LOGGER.info("ℹ Response is not JSON")
                 else:
                     _LOGGER.info("ℹ No response received")
             except asyncio.TimeoutError:
@@ -231,12 +221,6 @@ class SilverlineHoodCoordinator:
             
             return True
             
-        except asyncio.TimeoutError:
-            _LOGGER.error("✗ Timeout connecting to %s:%s", self.host, self.port)
-            return False
-        except ConnectionRefusedError:
-            _LOGGER.error("✗ Connection refused by %s:%s", self.host, self.port)
-            return False
         except Exception as ex:
             _LOGGER.error("✗ Error in send_exact_command: %s", ex, exc_info=True)
             return False
@@ -246,77 +230,29 @@ class SilverlineHoodCoordinator:
         try:
             _LOGGER.info("=== SENDING RAW COMMAND ===")
             _LOGGER.info("Command: %s", repr(command_str))
-            _LOGGER.info("Bytes: %s", [hex(b) for b in command_str.encode()])
             
             reader, writer = await asyncio.wait_for(
                 asyncio.open_connection(self.host, self.port), timeout=10
             )
             
-            _LOGGER.info("✓ Connection established")
-            
             # Read initial response
             try:
-                initial_response = await asyncio.wait_for(reader.read(100), timeout=3)
-                initial_str = initial_response.decode()
-                _LOGGER.info("✓ Initial response: %s", repr(initial_str))
+                await asyncio.wait_for(reader.read(100), timeout=3)
             except asyncio.TimeoutError:
-                _LOGGER.info("ℹ No initial response")
+                pass
             
             # Send command
             writer.write(command_str.encode())
             await writer.drain()
             _LOGGER.info("✓ Raw command sent")
             
-            # Wait for response
-            try:
-                response = await asyncio.wait_for(reader.read(2048), timeout=3)
-                if response:
-                    response_str = response.decode()
-                    _LOGGER.info("✓ Response: %s", repr(response_str))
-            except asyncio.TimeoutError:
-                _LOGGER.info("ℹ No response")
-            
             writer.close()
             await writer.wait_closed()
-            _LOGGER.info("✓ Connection closed")
-            
             return True
             
         except Exception as ex:
             _LOGGER.error("✗ Error in send_raw_command: %s", ex)
             return False
-
-    async def send_command(self, command: Dict[str, Any]) -> bool:
-        """Legacy method for compatibility with fan/light entities."""
-        _LOGGER.info("=== LEGACY SEND_COMMAND CALLED ===")
-        _LOGGER.info("Command: %s", command)
-        
-        # Map commands to exact types based on Wireshark data
-        if command.get("L") == 2:  # Light on
-            _LOGGER.info("→ Mapping to light_on")
-            return await self.send_exact_command("light_on")
-        elif command.get("L") == 0:  # Light off
-            _LOGGER.info("→ Mapping to light_off")
-            return await self.send_exact_command("light_off")
-        elif command.get("M") == 1:  # Fan speed 1
-            _LOGGER.info("→ Mapping to fan_speed_1")
-            return await self.send_exact_command("fan_speed_1")
-        elif command.get("M") == 2:  # Fan speed 2
-            _LOGGER.info("→ Mapping to fan_speed_2")
-            return await self.send_exact_command("fan_speed_2")
-        elif command.get("M") == 3:  # Fan speed 3
-            _LOGGER.info("→ Mapping to fan_speed_3")
-            return await self.send_exact_command("fan_speed_3")
-        elif command.get("M") == 0:  # Fan off
-            _LOGGER.info("→ Mapping to fan_off")
-            return await self.send_exact_command("fan_off")
-        else:
-            # Fallback: build command from current state
-            _LOGGER.info("→ Using fallback method")
-            self._state.update(command)
-            command_str = json.dumps(self._state) + '\r'
-            _LOGGER.info("→ Fallback command: %s", repr(command_str))
-            return await self.send_raw_command(command_str)
 
     @property
     def current_state(self) -> Dict[str, Any]:
@@ -326,30 +262,3 @@ class SilverlineHoodCoordinator:
     def update_interval_seconds(self) -> int:
         """Return update interval."""
         return 30
-
-    # Additional debug methods
-    async def test_connection_only(self) -> bool:
-        """Test just the connection without sending commands."""
-        try:
-            _LOGGER.info("=== TESTING CONNECTION ONLY ===")
-            reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(self.host, self.port), timeout=10
-            )
-            _LOGGER.info("✓ Connection successful")
-            
-            # Just read initial response
-            try:
-                response = await asyncio.wait_for(reader.read(100), timeout=5)
-                response_str = response.decode()
-                _LOGGER.info("✓ Initial response: %s", repr(response_str))
-            except asyncio.TimeoutError:
-                _LOGGER.info("ℹ No initial response")
-            
-            writer.close()
-            await writer.wait_closed()
-            _LOGGER.info("✓ Connection closed cleanly")
-            return True
-            
-        except Exception as ex:
-            _LOGGER.error("✗ Connection test failed: %s", ex)
-            return False

@@ -1,31 +1,3 @@
-test_exact_command:
-  name: Test Exact Command
-  description: Test exact commands from Wireshark capture
-  fields:
-    command_type:
-      name: Command Type
-      description: Type of command to send
-      required: true
-      selector:
-        select:
-          options:
-            - light_on
-            - light_off
-            - fan_speed_1
-            - fan_speed_2
-            - fan_speed_3
-            - fan_off
-            - status_query
-
-send_raw_bytes:
-  name: Send Raw Bytes
-  description: Send exact byte sequence
-  fields:
-    command:
-      name: Command
-      description: Exact command string to send
-      required: true
-
-query_status:
-  name: Query Status
-  description: Query current status from hood
+service: silverline_hood.test_exact_command
+data:
+  command_type: "status_query"
