@@ -3,7 +3,7 @@ from datetime import timedelta
 
 DOMAIN = "silverline_hood"
 DEFAULT_NAME = "Silverline Hood"
-DEFAULT_PORT = 23
+DEFAULT_PORT = 8555  # Geändert von 23 auf 8555
 DEFAULT_UPDATE_INTERVAL = 10  # seconds
 
 CONF_HOST = "host"
@@ -25,6 +25,9 @@ CMD_A = "A"
 
 # Status query command
 STATUS_QUERY = {"A": 4}
+
+# Expected device response
+DEVICE_IDENTIFIER = "okidargb"
 
 # Motor speeds
 MOTOR_OFF = 0

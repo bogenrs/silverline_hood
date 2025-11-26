@@ -13,7 +13,7 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
-from .const import DOMAIN, STATUS_QUERY, CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
+from .const import DOMAIN, STATUS_QUERY, CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL, DEVICE_IDENTIFIER
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -96,40 +96,61 @@ class SilverlineHoodCoordinator(DataUpdateCoordinator):
         except Exception as ex:
             raise UpdateFailed(f"Error communicating with Silverline Hood: {ex}")
 
+    async def _connect_and_read_initial(self):
+        """Connect and read the initial 'okidargb' response."""
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(self.host, self.port), timeout=10
+        )
+        
+        # Read initial response (should be "okidargb")
+        try:
+            initial_response = await asyncio.wait_for(reader.read(100), timeout=3)
+            initial_str = initial_response.decode().strip()
+            _LOGGER.debug("Initial response: %s", initial_str)
+        except asyncio.TimeoutError:
+            _LOGGER.debug("No initial response received")
+        
+        return reader, writer
+
     async def _query_status(self) -> Dict[str, Any]:
         """Query the current status from the hood."""
         try:
-            # Open connection
-            reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(self.host, self.port), timeout=5
-            )
+            # Connect and handle initial response
+            reader, writer = await self._connect_and_read_initial()
             
             # Send status query
-            query_command = json.dumps(STATUS_QUERY)
-            writer.write(query_command.encode() + b'\n')
+            query_command = json.dumps(STATUS_QUERY) + '\n'
+            writer.write(query_command.encode())
             await writer.drain()
             
             # Read response
-            response = await asyncio.wait_for(reader.readline(), timeout=5)
+            try:
+                response = await asyncio.wait_for(reader.read(1024), timeout=5)
+                
+                if response:
+                    response_str = response.decode().strip()
+                    _LOGGER.debug("Status response: %s", response_str)
+                    
+                    # Try to parse as JSON
+                    try:
+                        status_data = json.loads(response_str)
+                        writer.close()
+                        await writer.wait_closed()
+                        return status_data
+                    except json.JSONDecodeError:
+                        _LOGGER.debug("Status response is not JSON: %s", response_str)
+                
+            except asyncio.TimeoutError:
+                _LOGGER.debug("No status response received")
             
-            # Close connection
             writer.close()
             await writer.wait_closed()
             
-            # Parse response
-            if response:
-                status_data = json.loads(response.decode().strip())
-                _LOGGER.debug("Received status from %s:%s: %s", self.host, self.port, status_data)
-                return status_data
-            else:
-                _LOGGER.warning("No response received from Silverline Hood")
-                return self._last_sent_state
+            # Return last known state if no valid response
+            return self._last_sent_state
                 
         except asyncio.TimeoutError:
             _LOGGER.error("Timeout querying Silverline Hood at %s:%s", self.host, self.port)
-            raise
-        except json.JSONDecodeError as ex:
-            _LOGGER.error("Invalid JSON response from Silverline Hood: %s", ex)
             raise
         except Exception as ex:
             _LOGGER.error("Error querying Silverline Hood: %s", ex)
@@ -142,35 +163,18 @@ class SilverlineHoodCoordinator(DataUpdateCoordinator):
             self._last_sent_state.update(command)
             
             # Convert to JSON string
-            json_command = json.dumps(self._last_sent_state)
+            json_command = json.dumps(self._last_sent_state) + '\n'
             
-            # Send via Telnet
-            reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(self.host, self.port), timeout=5
-            )
+            # Connect and handle initial response
+            reader, writer = await self._connect_and_read_initial()
             
-            writer.write(json_command.encode() + b'\n')
+            # Send command
+            writer.write(json_command.encode())
             await writer.drain()
             
             writer.close()
             await writer.wait_closed()
             
-            _LOGGER.debug("Sent command to %s:%s: %s", self.host, self.port, json_command)
+            _LOGGER.debug("Sent command to %s:%s: %s", self.host, self.port, json_command.strip())
             
-            # Request immediate refresh to get updated status
-            await self.async_request_refresh()
-            
-            return True
-            
-        except Exception as ex:
-            _LOGGER.error("Error sending command to Silverline Hood: %s", ex)
-            return False
-
-    @property
-    def current_state(self) -> Dict[str, Any]:
-        """Return current state from coordinator data."""
-        return self.data if self.data else self._last_sent_state
-
-    def update_interval_seconds(self) -> int:
-        """Return current update interval in seconds."""
-        return int(self.update_interval.total_seconds())
+            #
