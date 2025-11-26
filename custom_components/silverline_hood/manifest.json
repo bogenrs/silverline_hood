@@ -1,12 +1,13 @@
 {
-  "domain": "kitchen_hood",
-  "name": "Kitchen Hood Controller",
+  "domain": "silverline_hood",
+  "name": "Silverline Hood",
   "version": "1.0.0",
   "documentation": "https://github.com/bogenrs/silverline_hood",
-  "issue_tracker": "https://github.com/yourusername/silverline_hood/issues",
+  "issue_tracker": "https://github.com/bogenrs/silverline_hood/issues",
   "dependencies": [],
   "codeowners": ["@bogenrs"],
   "config_flow": true,
   "iot_class": "local_polling",
-  "requirements": []
+  "requirements": [],
+  "after_dependencies": ["network"]
 }
