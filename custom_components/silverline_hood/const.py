@@ -5,14 +5,39 @@ DEFAULT_PORT = 8555
 CONF_HOST = "host"
 CONF_PORT = "port"
 
+# JSON command keys - Basis
 CMD_MOTOR = "M"
 CMD_LIGHT = "L"
+CMD_RED = "R"
+CMD_GREEN = "G"
+CMD_BLUE = "B"
+CMD_COLD_WHITE = "CW"
+CMD_BRIGHTNESS = "BRG"
+CMD_T = "T"
+CMD_TM = "TM"
+CMD_TS = "TS"
+CMD_A = "A"
 
-# Motor speeds - KORRIGIERT basierend auf Ihren Erkenntnissen
-MOTOR_OFF = 1      # M:1 = AUS
-MOTOR_SPEED_1 = 2  # M:2 = Stufe 1
-MOTOR_SPEED_2 = 3  # M:3 = Stufe 2  
-MOTOR_SPEED_3 = 4  # M:4 = Stufe 3
-MOTOR_SPEED_4 = 5  # M:5 = Stufe 4
+# Erweiterte Daten aus Wireshark
+CMD_LIGHT_MODE = "LM"       # Light Mode
+CMD_CW_DIRECTION = "CWD"    # Cold White Direction
+CMD_RGB_DIRECTION = "RGBD"  # RGB Direction
+CMD_WIFI_AP_SSID = "WAPS"   # WiFi Access Point SSID
+CMD_WIFI_AP_PASS = "WAPP"   # WiFi Access Point Password
+CMD_UNKNOWN_U = "U"         # Unknown parameter
+CMD_WIFI_MODE = "W"         # WiFi Mode (STA = Station)
+CMD_WIFI_SSID = "WS"        # Current WiFi SSID
+
+# Motor speeds - korrigiert
+MOTOR_OFF = 1
+MOTOR_SPEED_1 = 2
+MOTOR_SPEED_2 = 3  
+MOTOR_SPEED_3 = 4
+MOTOR_SPEED_4 = 5
 
 SPEED_LIST = ["off", "low", "medium", "high", "max"]
+
+# Status query command
+STATUS_QUERY = {"A": 4}
+DEVICE_IDENTIFIER = "okidargb"
+CMD_LINE_ENDING = '\r'

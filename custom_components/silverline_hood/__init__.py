@@ -14,7 +14,7 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["fan", "light"]
+PLATFORMS = ["fan", "light", "sensor"]
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -56,11 +56,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         result = await coordinator.send_exact_command("status_query")
         _LOGGER.info("Status query result: %s", result)
 
+    async def handle_extended_status(call: ServiceCall):
+        """Handle extended status query."""
+        _LOGGER.info("Service called: query_extended_status")
+        result = await coordinator.query_extended_status()
+        _LOGGER.info("Extended status result: %s", result)
+
     # Service-Schemas
     test_command_schema = vol.Schema({
         vol.Required("command_type", default="status_query"): vol.In([
             "light_on", "light_off", "fan_speed_1", "fan_speed_2", 
-            "fan_speed_3", "fan_off", "status_query"
+            "fan_speed_3", "fan_speed_4", "fan_off", "status_query"
         ])
     })
 
@@ -89,6 +95,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         handle_query_status
     )
 
+    hass.services.async_register(
+        DOMAIN,
+        "query_extended_status",
+        handle_extended_status
+    )
+
     _LOGGER.info("Silverline Hood integration setup completed with services")
     return True
 
@@ -99,6 +111,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.services.async_remove(DOMAIN, "test_exact_command")
     hass.services.async_remove(DOMAIN, "send_raw_bytes")
     hass.services.async_remove(DOMAIN, "query_status")
+    hass.services.async_remove(DOMAIN, "query_extended_status")
     
     # Unload platforms
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
@@ -140,18 +153,17 @@ class SilverlineHoodCoordinator:
             _LOGGER.info("Command type: %s", command_type)
             
             # Define exact commands from Wireshark capture
-            # In der send_exact_command Methode - neue Befehle hinzufügen:
             commands = {
                 "light_on": '{"M":1,"L":2,"R":45,"G":255,"B":104,"CW":110,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',
                 "light_off": '{"M":1,"L":0,"R":45,"G":255,"B":104,"CW":110,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',
-                
+
                 # KORRIGIERTE FAN-BEFEHLE
                 "fan_off": '{"M":1,"L":1,"R":45,"G":255,"B":104,"CW":255,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',      # M:1 = AUS
                 "fan_speed_1": '{"M":2,"L":1,"R":45,"G":255,"B":104,"CW":255,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',  # M:2 = Stufe 1  
                 "fan_speed_2": '{"M":3,"L":1,"R":45,"G":255,"B":104,"CW":255,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',  # M:3 = Stufe 2
                 "fan_speed_3": '{"M":4,"L":1,"R":45,"G":255,"B":104,"CW":255,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',  # M:4 = Stufe 3
                 "fan_speed_4": '{"M":5,"L":1,"R":45,"G":255,"B":104,"CW":255,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',  # M:5 = Stufe 4
-                
+
                 "status_query": '{"A":4}\r',
             }
             
@@ -210,6 +222,9 @@ class SilverlineHoodCoordinator:
                         if command_type == "status_query" and isinstance(response_json, dict):
                             self._state.update(response_json)
                             _LOGGER.info("✓ Updated internal state from response")
+                        # Update state for other commands too
+                        elif isinstance(response_json, dict):
+                            self._state.update(response_json)
                             
                     except json.JSONDecodeError:
                         _LOGGER.info("ℹ Response is not JSON")
@@ -242,14 +257,33 @@ class SilverlineHoodCoordinator:
             
             # Read initial response
             try:
-                await asyncio.wait_for(reader.read(100), timeout=3)
+                initial_response = await asyncio.wait_for(reader.read(100), timeout=3)
+                initial_str = initial_response.decode()
+                _LOGGER.debug("Initial response for raw command: %s", repr(initial_str))
             except asyncio.TimeoutError:
-                pass
+                _LOGGER.debug("No initial response for raw command")
             
             # Send command
             writer.write(command_str.encode())
             await writer.drain()
             _LOGGER.info("✓ Raw command sent")
+            
+            # Try to read response
+            try:
+                response = await asyncio.wait_for(reader.read(2048), timeout=3)
+                if response:
+                    response_str = response.decode()
+                    _LOGGER.info("✓ Raw command response: %s", repr(response_str))
+                    
+                    # Try to parse and update state
+                    try:
+                        response_json = json.loads(response_str.strip())
+                        self._state.update(response_json)
+                        _LOGGER.info("✓ Updated state from raw command response")
+                    except json.JSONDecodeError:
+                        _LOGGER.debug("Raw response is not JSON")
+            except asyncio.TimeoutError:
+                _LOGGER.debug("No response for raw command")
             
             writer.close()
             await writer.wait_closed()
@@ -257,6 +291,37 @@ class SilverlineHoodCoordinator:
             
         except Exception as ex:
             _LOGGER.error("✗ Error in send_raw_command: %s", ex)
+            return False
+
+    async def query_extended_status(self) -> bool:
+        """Query extended status information."""  
+        try:
+            _LOGGER.info("=== STARTING EXTENDED STATUS QUERY ===")
+            
+            # Normale Status-Abfrage
+            await self.send_exact_command("status_query")
+            
+            # Mögliche weitere Befehle für mehr Daten
+            extended_queries = [
+                '{"A":10}\r',  # Andere Status-Query
+                '{"A":5}\r',   # Noch eine Query
+                '{"A":1}\r',   # Weitere Query
+            ]
+            
+            for i, query in enumerate(extended_queries, 1):
+                try:
+                    _LOGGER.info("Extended query %d: %s", i, repr(query))
+                    await self.send_raw_command(query)
+                    await asyncio.sleep(0.5)  # Kurz warten zwischen Abfragen
+                except Exception as e:
+                    _LOGGER.debug("Extended query %d failed: %s", i, e)
+                    continue
+            
+            _LOGGER.info("=== EXTENDED STATUS QUERY COMPLETED ===")
+            return True
+            
+        except Exception as ex:
+            _LOGGER.error("Error in extended status query: %s", ex)
             return False
 
     @property
