@@ -140,13 +140,18 @@ class SilverlineHoodCoordinator:
             _LOGGER.info("Command type: %s", command_type)
             
             # Define exact commands from Wireshark capture
+            # In der send_exact_command Methode - neue Befehle hinzufügen:
             commands = {
                 "light_on": '{"M":1,"L":2,"R":45,"G":255,"B":104,"CW":110,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',
                 "light_off": '{"M":1,"L":0,"R":45,"G":255,"B":104,"CW":110,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',
-                "fan_speed_1": '{"M":1,"L":1,"R":45,"G":255,"B":104,"CW":255,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',
-                "fan_speed_2": '{"M":2,"L":1,"R":45,"G":255,"B":104,"CW":255,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',
-                "fan_speed_3": '{"M":3,"L":1,"R":45,"G":255,"B":104,"CW":3,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',
-                "fan_off": '{"M":0,"L":1,"R":45,"G":255,"B":104,"CW":255,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',
+                
+                # KORRIGIERTE FAN-BEFEHLE
+                "fan_off": '{"M":1,"L":1,"R":45,"G":255,"B":104,"CW":255,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',      # M:1 = AUS
+                "fan_speed_1": '{"M":2,"L":1,"R":45,"G":255,"B":104,"CW":255,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',  # M:2 = Stufe 1  
+                "fan_speed_2": '{"M":3,"L":1,"R":45,"G":255,"B":104,"CW":255,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',  # M:3 = Stufe 2
+                "fan_speed_3": '{"M":4,"L":1,"R":45,"G":255,"B":104,"CW":255,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',  # M:4 = Stufe 3
+                "fan_speed_4": '{"M":5,"L":1,"R":45,"G":255,"B":104,"CW":255,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',  # M:5 = Stufe 4
+                
                 "status_query": '{"A":4}\r',
             }
             
