@@ -1,0 +1,34 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Silverline Hood Setup",
+        "description": "Konfigurieren Sie Ihre Silverline Dunstabzugshaube",
+        "data": {
+          "host": "IP-Adresse",
+          "port": "Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zur Silverline Hood fehlgeschlagen",
+      "unknown": "Unerwarteter Fehler aufgetreten"
+    },
+    "abort": {
+      "already_configured": "Gerät ist bereits konfiguriert"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Silverline Hood Einstellungen",
+        "description": "Konfigurieren Sie die Einstellungen für Ihre Silverline Hood.\n\nAbfrageintervall: {min_interval}-{max_interval} Sekunden\nAktuell: {current_interval} Sekunden",
+        "data": {
+          "host": "IP-Adresse",
+          "port": "Port",
+          "update_interval": "Abfrageintervall (Sekunden)"
+        }
+      }
+    }
+  }
+}
