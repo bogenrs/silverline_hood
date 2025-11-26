@@ -1,0 +1,28 @@
+test_exact_command:
+  name: Test Exact Command
+  description: Test exact commands from Wireshark capture
+  fields:
+    command_type:
+      name: Command Type
+      description: Type of command to send
+      required: true
+      selector:
+        select:
+          options:
+            - light_on
+            - light_off
+            - fan_speed_1
+            - fan_speed_2
+            - fan_speed_3
+            - fan_off
+            - status_query
+
+send_raw_bytes:
+  name: Send Raw Bytes
+  description: Send exact byte sequence
+  fields:
+    command:
+      name: Command
+      description: Exact command string to send
+      required: true
+      example: '{"M":1,"L":2,"R":45,"G":255,"B":104,"CW":110,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r'
