@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Silverline Hood Setup",
-        "description": "Konfigurieren Sie Ihre Silverline Dunstabzugshaube",
+        "description": "Konfigurieren Sie Ihre Silverline Dunstabzugshaube\n\nStandard-Port: {default_port}",
         "data": {
           "host": "IP-Adresse",
           "port": "Port"
@@ -11,7 +11,7 @@
       }
     },
     "error": {
-      "cannot_connect": "Verbindung zur Silverline Hood fehlgeschlagen",
+      "cannot_connect": "Verbindung zur Silverline Hood fehlgeschlagen. Überprüfen Sie IP-Adresse und Port.",
       "unknown": "Unerwarteter Fehler aufgetreten"
     },
     "abort": {
