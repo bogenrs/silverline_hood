@@ -2,26 +2,12 @@
 import logging
 from typing import Any, Optional, Tuple
 
-from homeassistant.components.light import (
-    ATTR_BRIGHTNESS,
-    ATTR_RGBW_COLOR,
-    ColorMode,
-    LightEntity,
-)
+from homeassistant.components.light import LightEntity, ColorMode, ATTR_BRIGHTNESS, ATTR_RGBW_COLOR
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import (
-    CMD_BLUE,
-    CMD_BRIGHTNESS,
-    CMD_COLD_WHITE,
-    CMD_GREEN,
-    CMD_LIGHT,
-    CMD_RED,
-    DOMAIN,
-)
+from .const import CMD_LIGHT, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,99 +18,74 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Silverline Hood light from a config entry."""
+    _LOGGER.info("Setting up Silverline Hood light entity")
     coordinator = hass.data[DOMAIN][config_entry.entry_id]
-    async_add_entities([SilverlineHoodLight(coordinator)], True)
+    light = SilverlineHoodLight(coordinator)
+    async_add_entities([light], True)
+    _LOGGER.info("Silverline Hood light entity added")
 
 
-class SilverlineHoodLight(CoordinatorEntity, LightEntity):
+class SilverlineHoodLight(LightEntity):
     """Representation of a Silverline Hood Light."""
-
-    _attr_has_entity_name = True
-    _attr_name = None
 
     def __init__(self, coordinator):
         """Initialize the light."""
-        super().__init__(coordinator)
+        self._coordinator = coordinator
+        self._attr_name = "Silverline Hood Light"
         self._attr_unique_id = f"{coordinator.host}_{coordinator.port}_light"
         self._attr_supported_color_modes = {ColorMode.RGBW}
         self._attr_color_mode = ColorMode.RGBW
+        self._attr_should_poll = False  # Wichtig: kein automatisches Polling
+        _LOGGER.info("Light entity initialized: %s", self._attr_unique_id)
 
     @property
     def device_info(self):
         """Return device information."""
         return {
-            "identifiers": {(DOMAIN, f"{self.coordinator.host}_{self.coordinator.port}")},
+            "identifiers": {(DOMAIN, f"{self._coordinator.host}_{self._coordinator.port}")},
             "name": "Silverline Hood",
             "manufacturer": "Silverline",
             "model": "Smart Hood",
-            "sw_version": f"Update: {self.coordinator.update_interval_seconds()}s",
         }
-
-    @property
-    def name(self) -> str:
-        """Return the name of the light."""
-        return "Light"
 
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
-        return self.coordinator.last_update_success
-
-    @property
-    def extra_state_attributes(self):
-        """Return additional state attributes."""
-        state = self.coordinator.current_state
-        return {
-            "update_interval_seconds": self.coordinator.update_interval_seconds(),
-            "host": self.coordinator.host,
-            "port": self.coordinator.port,
-            "current_light_state": state.get(CMD_LIGHT, 0),
-            "current_red": state.get(CMD_RED, 255),
-            "current_green": state.get(CMD_GREEN, 255),
-            "current_blue": state.get(CMD_BLUE, 255),
-            "current_cold_white": state.get(CMD_COLD_WHITE, 255),
-            "current_brightness": state.get(CMD_BRIGHTNESS, 255),
-        }
+        return True
 
     @property
     def is_on(self) -> bool:
         """Return true if light is on."""
-        return self.coordinator.current_state.get(CMD_LIGHT, 0) == 1
+        # Basierend auf Wireshark: L:2 = an, L:0 = aus
+        return self._coordinator.current_state.get(CMD_LIGHT, 0) == 2
 
     @property
     def brightness(self) -> Optional[int]:
         """Return the brightness of this light between 0..255."""
-        return self.coordinator.current_state.get(CMD_BRIGHTNESS, 255)
+        return self._coordinator.current_state.get("BRG", 255)
 
     @property
     def rgbw_color(self) -> Optional[Tuple[int, int, int, int]]:
         """Return the rgbw color value."""
-        state = self.coordinator.current_state
+        state = self._coordinator.current_state
         return (
-            state.get(CMD_RED, 255),
-            state.get(CMD_GREEN, 255),
-            state.get(CMD_BLUE, 255),
-            state.get(CMD_COLD_WHITE, 255),
+            state.get("R", 45),
+            state.get("G", 255),
+            state.get("B", 104),
+            state.get("CW", 255),
         )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Instruct the light to turn on."""
-        command = {CMD_LIGHT: 1}
-
-        if ATTR_BRIGHTNESS in kwargs:
-            command[CMD_BRIGHTNESS] = kwargs[ATTR_BRIGHTNESS]
-
-        if ATTR_RGBW_COLOR in kwargs:
-            rgbw = kwargs[ATTR_RGBW_COLOR]
-            command[CMD_RED] = rgbw[0]
-            command[CMD_GREEN] = rgbw[1]
-            command[CMD_BLUE] = rgbw[2]
-            command[CMD_COLD_WHITE] = rgbw[3]
-
-        _LOGGER.debug("Turning on light with command: %s", command)
-        await self.coordinator.send_command(command)
+        """Turn on the light."""
+        _LOGGER.info("Light turn_on called with kwargs: %s", kwargs)
+        
+        # Für jetzt verwenden wir den einfachen light_on Befehl
+        # Später können wir das erweitern für Farben/Helligkeit
+        await self._coordinator.send_exact_command("light_on")
+        self.schedule_update_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Instruct the light to turn off."""
-        _LOGGER.debug("Turning off light")
-        await self.coordinator.send_command({CMD_LIGHT: 0})
+        """Turn off the light."""
+        _LOGGER.info("Light turn_off called")
+        await self._coordinator.send_exact_command("light_off")
+        self.schedule_update_ha_state()

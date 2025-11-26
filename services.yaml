@@ -25,4 +25,7 @@ send_raw_bytes:
       name: Command
       description: Exact command string to send
       required: true
-      example: '{"M":1,"L":2,"R":45,"G":255,"B":104,"CW":110,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r'
+
+query_status:
+  name: Query Status
+  description: Query current status from hood
