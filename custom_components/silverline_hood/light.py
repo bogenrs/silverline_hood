@@ -57,7 +57,8 @@ class SilverlineHoodLight(CoordinatorEntity, LightEntity):
         """Return the brightness."""
         if not self.coordinator.data:
             return 132
-        return self.coordinator.data.get("BRG", 132)
+        device_brg = self.coordinator.data.get("BRG", 132)
+        return self._convert_brightness_from_device(device_brg)
 
     @property
     def rgbw_color(self) -> Optional[Tuple[int, int, int, int]]:
@@ -72,6 +73,20 @@ class SilverlineHoodLight(CoordinatorEntity, LightEntity):
             data.get("CW", 110),
         )
 
+    def _convert_brightness_to_device(self, ha_brightness: int) -> int:
+        """Convert HA brightness (0-255) to device range (24-168)."""
+        # HA: 0-255 -> Device: 24-168
+        if ha_brightness <= 0:
+            return 24  # Minimum device brightness
+        return int(24 + (ha_brightness * (168 - 24) / 255))
+
+    def _convert_brightness_from_device(self, device_brightness: int) -> int:
+        """Convert device brightness (24-168) to HA range (0-255)."""
+        # Device: 24-168 -> HA: 0-255
+        if device_brightness <= 24:
+            return 1  # Minimum HA brightness (not 0, as that means "off")
+        return int((device_brightness - 24) * 255 / (168 - 24))
+
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the light."""
         _LOGGER.info("Light turn_on called: %s", kwargs)
@@ -79,7 +94,10 @@ class SilverlineHoodLight(CoordinatorEntity, LightEntity):
         changes = {}
         
         if ATTR_BRIGHTNESS in kwargs:
-            changes["BRG"] = kwargs[ATTR_BRIGHTNESS]
+            ha_brightness = kwargs[ATTR_BRIGHTNESS]
+            device_brightness = self._convert_brightness_to_device(ha_brightness)
+            changes["BRG"] = device_brightness
+            _LOGGER.debug("Brightness: HA %d -> Device %d", ha_brightness, device_brightness)
         
         if ATTR_RGBW_COLOR in kwargs:
             rgbw = kwargs[ATTR_RGBW_COLOR]
