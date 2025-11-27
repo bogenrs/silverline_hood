@@ -122,7 +122,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 class SilverlineHoodCoordinator:
-    """Simple coordinator for Silverline Hood communication."""
+    """Smart coordinator for Silverline Hood communication."""
 
     def __init__(self, hass: HomeAssistant, host: str, port: int):
         """Initialize the coordinator."""
@@ -145,101 +145,141 @@ class SilverlineHoodCoordinator:
             "A": 1
         }
 
-    async def send_exact_command(self, command_type: str) -> bool:
-        """Send exact commands as seen in Wireshark."""
+    async def _query_current_status(self) -> bool:
+        """Query current status and update internal state."""
         try:
-            _LOGGER.info("=== STARTING EXACT COMMAND SEND ===")
-            _LOGGER.info("Target: %s:%s", self.host, self.port)
-            _LOGGER.info("Command type: %s", command_type)
+            _LOGGER.debug("Querying current status before command...")
             
-            # Define exact commands from Wireshark capture
-            commands = {
-                "light_on": '{"M":1,"L":2,"R":45,"G":255,"B":104,"CW":110,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',
-                "light_off": '{"M":1,"L":0,"R":45,"G":255,"B":104,"CW":110,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',
-
-                # KORRIGIERTE FAN-BEFEHLE
-                "fan_off": '{"M":1,"L":1,"R":45,"G":255,"B":104,"CW":255,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',      # M:1 = AUS
-                "fan_speed_1": '{"M":2,"L":1,"R":45,"G":255,"B":104,"CW":255,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',  # M:2 = Stufe 1  
-                "fan_speed_2": '{"M":3,"L":1,"R":45,"G":255,"B":104,"CW":255,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',  # M:3 = Stufe 2
-                "fan_speed_3": '{"M":4,"L":1,"R":45,"G":255,"B":104,"CW":255,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',  # M:4 = Stufe 3
-                "fan_speed_4": '{"M":5,"L":1,"R":45,"G":255,"B":104,"CW":255,"BRG":132,"T":0,"TM":0,"TS":255,"A":1}\r',  # M:5 = Stufe 4
-
-                "status_query": '{"A":4}\r',
-            }
-            
-            if command_type not in commands:
-                _LOGGER.error("Unknown command type: %s. Available: %s", command_type, list(commands.keys()))
-                return False
-                
-            command_str = commands[command_type]
-            
-            _LOGGER.info("Command string: %s", repr(command_str))
-            _LOGGER.info("Command bytes: %s", [hex(b) for b in command_str.encode()])
-            
-            # Open connection
-            _LOGGER.info("Opening connection...")
             reader, writer = await asyncio.wait_for(
                 asyncio.open_connection(self.host, self.port), timeout=10
             )
             
-            _LOGGER.info("✓ Connection established to %s:%s", self.host, self.port)
-            
             # Read initial response
-            _LOGGER.info("Waiting for initial response...")
             try:
-                initial_response = await asyncio.wait_for(reader.read(100), timeout=5)
-                initial_str = initial_response.decode()
-                _LOGGER.info("✓ Initial response received: %s", repr(initial_str))
-                
-                if "okidargb" in initial_str:
-                    _LOGGER.info("✓ Received expected 'okidargb' response")
-                else:
-                    _LOGGER.warning("⚠ Did not receive expected 'okidargb', got: %s", repr(initial_str))
-                    
+                await asyncio.wait_for(reader.read(100), timeout=2)
             except asyncio.TimeoutError:
-                _LOGGER.warning("⚠ No initial response received within 5 seconds")
+                pass
             
-            # Send the exact command
-            _LOGGER.info("Sending command...")
-            writer.write(command_str.encode())
+            # Send status query
+            status_cmd = '{"A":4}\r'
+            writer.write(status_cmd.encode())
             await writer.drain()
-            _LOGGER.info("✓ Command sent and flushed")
             
-            # Wait for response
-            _LOGGER.info("Waiting for command response...")
-            try:
-                response = await asyncio.wait_for(reader.read(2048), timeout=5)
-                if response:
-                    response_str = response.decode()
-                    _LOGGER.info("✓ Command response received: %s", repr(response_str))
-                    
-                    # Try to parse JSON if possible
-                    try:
-                        response_json = json.loads(response_str.strip())
-                        _LOGGER.info("✓ Parsed response JSON: %s", response_json)
-                        
-                        # Update our state if we got a status response
-                        if command_type == "status_query" and isinstance(response_json, dict):
-                            self._state.update(response_json)
-                            _LOGGER.info("✓ Updated internal state from response")
-                        # Update state for other commands too
-                        elif isinstance(response_json, dict):
-                            self._state.update(response_json)
-                            
-                    except json.JSONDecodeError:
-                        _LOGGER.info("ℹ Response is not JSON")
-                else:
-                    _LOGGER.info("ℹ No response received")
-            except asyncio.TimeoutError:
-                _LOGGER.info("ℹ No response within timeout")
+            # Read status response
+            response = await asyncio.wait_for(reader.read(2048), timeout=3)
+            if response:
+                response_str = response.decode().strip()
+                try:
+                    status_data = json.loads(response_str)
+                    # Update internal state with current values
+                    self._state.update(status_data)
+                    _LOGGER.debug("✓ Status updated: %s", status_data)
+                    writer.close()
+                    await writer.wait_closed()
+                    return True
+                except json.JSONDecodeError:
+                    _LOGGER.debug("Status response not JSON: %s", response_str)
             
-            # Close connection
             writer.close()
             await writer.wait_closed()
-            _LOGGER.info("✓ Connection closed")
-            _LOGGER.info("=== COMMAND SEND COMPLETED SUCCESSFULLY ===")
+            return False
             
+        except Exception as ex:
+            _LOGGER.debug("Status query failed: %s", ex)
+            return False
+
+    async def send_smart_command(self, changes: dict) -> bool:
+        """Send command with only changed values, preserving current state."""
+        try:
+            _LOGGER.info("=== SMART COMMAND: %s ===", changes)
+            
+            # First, get current status
+            await self._query_current_status()
+            
+            # Apply only the requested changes
+            new_state = self._state.copy()
+            new_state.update(changes)
+            
+            _LOGGER.info("Current state: %s", {k: self._state.get(k) for k in changes.keys()})
+            _LOGGER.info("New state: %s", {k: new_state.get(k) for k in changes.keys()})
+            
+            # Send the complete command with preserved values
+            command_str = json.dumps(new_state) + '\r'
+            _LOGGER.info("Sending smart command: %s", repr(command_str))
+            
+            # Send command
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(self.host, self.port), timeout=10
+            )
+            
+            # Read initial response
+            try:
+                await asyncio.wait_for(reader.read(100), timeout=2)
+            except asyncio.TimeoutError:
+                pass
+            
+            # Send command
+            writer.write(command_str.encode())
+            await writer.drain()
+            
+            # Read response and update state
+            try:
+                response = await asyncio.wait_for(reader.read(2048), timeout=3)
+                if response:
+                    response_str = response.decode().strip()
+                    try:
+                        response_json = json.loads(response_str)
+                        self._state.update(response_json)
+                        _LOGGER.info("✓ Smart command successful, state updated")
+                    except json.JSONDecodeError:
+                        # Command successful even without JSON response
+                        self._state.update(new_state)
+                        _LOGGER.info("✓ Smart command sent, state assumed updated")
+            except asyncio.TimeoutError:
+                # No response is often normal, assume success
+                self._state.update(new_state)
+                _LOGGER.info("✓ Smart command sent, no response (normal)")
+            
+            writer.close()
+            await writer.wait_closed()
             return True
+            
+        except Exception as ex:
+            _LOGGER.error("✗ Smart command failed: %s", ex)
+            return False
+
+    async def send_exact_command(self, command_type: str) -> bool:
+        """Send exact commands as seen in Wireshark."""
+        try:
+            _LOGGER.info("=== EXACT COMMAND: %s ===", command_type)
+            
+            # Define ONLY the changes for each command type
+            command_changes = {
+                # Light commands - only change light-related values
+                "light_on": {"L": 2},
+                "light_off": {"L": 0},
+                
+                # Fan commands - only change motor value
+                "fan_off": {"M": 1},         # M:1 = AUS
+                "fan_speed_1": {"M": 2},     # M:2 = Stufe 1  
+                "fan_speed_2": {"M": 3},     # M:3 = Stufe 2
+                "fan_speed_3": {"M": 4},     # M:4 = Stufe 3
+                "fan_speed_4": {"M": 5},     # M:5 = Stufe 4
+                
+                # Status query
+                "status_query": {},  # Special case
+            }
+            
+            if command_type == "status_query":
+                return await self._query_current_status()
+            
+            if command_type not in command_changes:
+                _LOGGER.error("Unknown command type: %s", command_type)
+                return False
+            
+            # Use smart command with only the necessary changes
+            changes = command_changes[command_type]
+            return await self.send_smart_command(changes)
             
         except Exception as ex:
             _LOGGER.error("✗ Error in send_exact_command: %s", ex, exc_info=True)
@@ -248,7 +288,7 @@ class SilverlineHoodCoordinator:
     async def send_raw_command(self, command_str: str) -> bool:
         """Send raw command string."""
         try:
-            _LOGGER.info("=== SENDING RAW COMMAND ===")
+            _LOGGER.info("=== RAW COMMAND ===")
             _LOGGER.info("Command: %s", repr(command_str))
             
             reader, writer = await asyncio.wait_for(
@@ -257,33 +297,27 @@ class SilverlineHoodCoordinator:
             
             # Read initial response
             try:
-                initial_response = await asyncio.wait_for(reader.read(100), timeout=3)
-                initial_str = initial_response.decode()
-                _LOGGER.debug("Initial response for raw command: %s", repr(initial_str))
+                await asyncio.wait_for(reader.read(100), timeout=2)
             except asyncio.TimeoutError:
-                _LOGGER.debug("No initial response for raw command")
+                pass
             
             # Send command
             writer.write(command_str.encode())
             await writer.drain()
-            _LOGGER.info("✓ Raw command sent")
             
-            # Try to read response
+            # Try to read and parse response
             try:
                 response = await asyncio.wait_for(reader.read(2048), timeout=3)
                 if response:
-                    response_str = response.decode()
-                    _LOGGER.info("✓ Raw command response: %s", repr(response_str))
-                    
-                    # Try to parse and update state
+                    response_str = response.decode().strip()
                     try:
-                        response_json = json.loads(response_str.strip())
+                        response_json = json.loads(response_str)
                         self._state.update(response_json)
-                        _LOGGER.info("✓ Updated state from raw command response")
+                        _LOGGER.info("✓ Raw command response parsed and state updated")
                     except json.JSONDecodeError:
-                        _LOGGER.debug("Raw response is not JSON")
+                        _LOGGER.info("✓ Raw command sent, response not JSON")
             except asyncio.TimeoutError:
-                _LOGGER.debug("No response for raw command")
+                _LOGGER.info("✓ Raw command sent, no response")
             
             writer.close()
             await writer.wait_closed()
@@ -296,28 +330,27 @@ class SilverlineHoodCoordinator:
     async def query_extended_status(self) -> bool:
         """Query extended status information."""  
         try:
-            _LOGGER.info("=== STARTING EXTENDED STATUS QUERY ===")
+            _LOGGER.info("=== EXTENDED STATUS QUERY ===")
             
             # Normale Status-Abfrage
-            await self.send_exact_command("status_query")
+            await self._query_current_status()
             
             # Mögliche weitere Befehle für mehr Daten
             extended_queries = [
-                '{"A":10}\r',  # Andere Status-Query
-                '{"A":5}\r',   # Noch eine Query
-                '{"A":1}\r',   # Weitere Query
+                '{"A":10}\r',
+                '{"A":5}\r',
+                '{"A":1}\r',
             ]
             
             for i, query in enumerate(extended_queries, 1):
                 try:
-                    _LOGGER.info("Extended query %d: %s", i, repr(query))
+                    _LOGGER.debug("Extended query %d: %s", i, repr(query))
                     await self.send_raw_command(query)
-                    await asyncio.sleep(0.5)  # Kurz warten zwischen Abfragen
+                    await asyncio.sleep(0.5)
                 except Exception as e:
                     _LOGGER.debug("Extended query %d failed: %s", i, e)
                     continue
             
-            _LOGGER.info("=== EXTENDED STATUS QUERY COMPLETED ===")
             return True
             
         except Exception as ex:

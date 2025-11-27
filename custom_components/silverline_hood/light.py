@@ -23,7 +23,7 @@ async def async_setup_entry(
 
 
 class SilverlineHoodLight(LightEntity):
-    """Light entity with dynamic RGBW support."""
+    """Light entity with smart RGBW support."""
 
     def __init__(self, coordinator):
         """Initialize the light."""
@@ -43,6 +43,11 @@ class SilverlineHoodLight(LightEntity):
             "manufacturer": "Silverline",
             "model": "Smart Hood",
         }
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return True
 
     @property
     def is_on(self) -> bool:
@@ -65,56 +70,58 @@ class SilverlineHoodLight(LightEntity):
             state.get("CW", 110),
         )
 
+    @property
+    def extra_state_attributes(self):
+        """Return additional state attributes."""
+        state = self._coordinator.current_state
+        return {
+            "host": self._coordinator.host,
+            "port": self._coordinator.port,
+            "current_light_state": state.get("L", 0),
+            "current_red": state.get("R", 45),
+            "current_green": state.get("G", 255),
+            "current_blue": state.get("B", 104),
+            "current_cold_white": state.get("CW", 110),
+            "current_brightness": state.get("BRG", 132),
+        }
+
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the light with dynamic colors."""
         _LOGGER.info("Light turn_on called with kwargs: %s", kwargs)
         
-        # Start with base state
-        command_data = {
-            "M": 1,     # Motor bleibt an
-            "L": 2,     # Licht an
-            "R": 45,    # Default Rot
-            "G": 255,   # Default Grün  
-            "B": 104,   # Default Blau
-            "CW": 110,  # Default Kaltweiß
-            "BRG": 132, # Default Helligkeit
-            "T": 0,
-            "TM": 0,
-            "TS": 255,
-            "A": 1
-        }
+        # Start with light on
+        changes = {"L": 2}
         
-        # Helligkeit anwenden
+        # Add brightness if specified
         if ATTR_BRIGHTNESS in kwargs:
-            brightness = kwargs[ATTR_BRIGHTNESS]
-            command_data["BRG"] = brightness
-            _LOGGER.info("Setting brightness to: %s", brightness)
+            changes["BRG"] = kwargs[ATTR_BRIGHTNESS]
+            _LOGGER.info("Setting brightness to: %s", kwargs[ATTR_BRIGHTNESS])
         
-        # RGBW-Farbe anwenden  
+        # Add RGBW color if specified
         if ATTR_RGBW_COLOR in kwargs:
             rgbw = kwargs[ATTR_RGBW_COLOR]
-            command_data["R"] = rgbw[0]    # Rot
-            command_data["G"] = rgbw[1]    # Grün
-            command_data["B"] = rgbw[2]    # Blau
-            command_data["CW"] = rgbw[3]   # Kaltweiß
+            changes.update({
+                "R": rgbw[0],
+                "G": rgbw[1], 
+                "B": rgbw[2],
+                "CW": rgbw[3]
+            })
             _LOGGER.info("Setting RGBW to: R=%s, G=%s, B=%s, CW=%s", 
                         rgbw[0], rgbw[1], rgbw[2], rgbw[3])
         
-        # Befehl als JSON + \r erstellen
-        import json
-        command_str = json.dumps(command_data) + '\r'
-        
-        _LOGGER.info("Sending dynamic command: %s", repr(command_str))
-        
-        # Raw command senden (dynamisch)
-        await self._coordinator.send_raw_command(command_str)
-        
-        # Internen Zustand aktualisieren
-        self._coordinator._state.update(command_data)
-        self.schedule_update_ha_state()
+        # Send smart command (preserves fan status!)
+        result = await self._coordinator.send_smart_command(changes)
+        if result:
+            self.schedule_update_ha_state()
+        else:
+            _LOGGER.error("Failed to turn on light")
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the light."""
         _LOGGER.info("Light turn_off called")
-        await self._coordinator.send_exact_command("light_off")
-        self.schedule_update_ha_state()
+        # Only change light, preserve everything else
+        result = await self._coordinator.send_smart_command({"L": 0})
+        if result:
+            self.schedule_update_ha_state()
+        else:
+            _LOGGER.error("Failed to turn off light")
