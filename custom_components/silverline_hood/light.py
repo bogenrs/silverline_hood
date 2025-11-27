@@ -53,8 +53,8 @@ class SilverlineHoodLight(LightEntity):
     def is_on(self) -> bool:
         """Return true if light is on."""
         light_state = self._coordinator.current_state.get("L", 1)
-        # KORRIGIERT: L:1=AUS, L:3=AN (nicht L:2!)
-        is_on = light_state == 3
+        # KORRIGIERT basierend auf Wireshark-Analyse: L:1=AUS, L:2=AN
+        is_on = light_state == 2
         _LOGGER.debug("Light state: L=%s, is_on=%s", light_state, is_on)
         return is_on
 
@@ -87,45 +87,65 @@ class SilverlineHoodLight(LightEntity):
             "current_blue": state.get("B", 104),
             "current_cold_white": state.get("CW", 110),
             "current_brightness": state.get("BRG", 132),
+            "last_command_success": True,  # Könnte erweitert werden
         }
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the light with dynamic colors."""
         _LOGGER.info("Light turn_on called with kwargs: %s", kwargs)
         
-        # KORRIGIERT: App sendet L:2 zum Einschalten
+        # KORRIGIERT: L:2 zum Einschalten (basierend auf Wireshark)
         changes = {"L": 2}
         
         # Add brightness if specified
         if ATTR_BRIGHTNESS in kwargs:
-            changes["BRG"] = kwargs[ATTR_BRIGHTNESS]
-            _LOGGER.info("Setting brightness to: %s", kwargs[ATTR_BRIGHTNESS])
+            brightness = kwargs[ATTR_BRIGHTNESS]
+            changes["BRG"] = brightness
+            _LOGGER.info("Setting brightness to: %s", brightness)
         
         # Add RGBW color if specified
         if ATTR_RGBW_COLOR in kwargs:
             rgbw = kwargs[ATTR_RGBW_COLOR]
             changes.update({
-                "R": rgbw[0],
-                "G": rgbw[1], 
-                "B": rgbw[2],
-                "CW": rgbw[3]
+                "R": rgbw[0],    # Rot
+                "G": rgbw[1],    # Grün
+                "B": rgbw[2],    # Blau
+                "CW": rgbw[3]    # Kaltweiß
             })
             _LOGGER.info("Setting RGBW to: R=%s, G=%s, B=%s, CW=%s", 
                         rgbw[0], rgbw[1], rgbw[2], rgbw[3])
         
         # Send smart command (preserves fan status!)
+        _LOGGER.debug("Sending light ON command: %s", changes)
         result = await self._coordinator.send_smart_command(changes)
+        
         if result:
+            _LOGGER.info("✓ Light turned ON successfully")
             self.schedule_update_ha_state()
         else:
-            _LOGGER.error("Failed to turn on light")
+            _LOGGER.error("✗ Failed to turn on light")
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the light."""
         _LOGGER.info("Light turn_off called")
-        # KORRIGIERT: App sendet L:1 zum Ausschalten
-        result = await self._coordinator.send_smart_command({"L": 1})
+        
+        # KORRIGIERT: L:1 zum Ausschalten (basierend auf Wireshark)
+        changes = {"L": 1}
+        
+        _LOGGER.debug("Sending light OFF command: %s", changes)
+        result = await self._coordinator.send_smart_command(changes)
+        
         if result:
+            _LOGGER.info("✓ Light turned OFF successfully")
             self.schedule_update_ha_state()
         else:
-            _LOGGER.error("Failed to turn off light")
+            _LOGGER.error("✗ Failed to turn off light")
+
+    async def async_update(self):
+        """Update light state by querying the device."""
+        # Optional: Explicit state update
+        try:
+            await self._coordinator._query_current_status()
+            _LOGGER.debug("Light state updated from device")
+        except Exception as ex:
+            _LOGGER.debug("Could not update light state: %s", ex)
