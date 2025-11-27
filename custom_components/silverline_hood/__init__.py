@@ -248,7 +248,7 @@ class SilverlineHoodCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(f"Failed to query status: {ex}")
 
     async def send_smart_command(self, changes: dict) -> bool:
-        """Send command with only changed values."""
+        """Send command with correct app-like parameters."""
         try:
             _LOGGER.info("=== SMART COMMAND START ===")
             _LOGGER.info("Changes requested: %s", changes)
@@ -261,17 +261,26 @@ class SilverlineHoodCoordinator(DataUpdateCoordinator):
             new_state = current_state.copy()
             new_state.update(changes)
             
-            # Remove unwanted keys that might cause issues
-            clean_state = {}
-            for key in ["M", "L", "R", "G", "B", "CW", "BRG", "T", "TM", "TS", "A"]:
-                if key in new_state:
-                    clean_state[key] = new_state[key]
+            # KORRIGIERT: App-konforme Werte für Control-Befehle!
+            clean_state = {
+                "M": new_state.get("M", 1),
+                "L": new_state.get("L", 1), 
+                "R": new_state.get("R", 45),
+                "G": new_state.get("G", 255),
+                "B": new_state.get("B", 104),
+                "CW": new_state.get("CW", 110),
+                "BRG": new_state.get("BRG", 132),
+                "T": new_state.get("T", 0),
+                "TM": new_state.get("TM", 0),
+                "TS": 255,  # IMMER 255 wie in der App!
+                "A": 1      # IMMER 1 für Control-Befehle (nicht 4!)
+            }
             
-            _LOGGER.info("Sending state: %s", clean_state)
+            _LOGGER.info("Sending CORRECTED state: %s", clean_state)
             
             # Send command
             command_str = json.dumps(clean_state) + '\r'
-            _LOGGER.info("Command string: %s", repr(command_str))
+            _LOGGER.info("CORRECTED Command string: %s", repr(command_str))
             
             reader, writer = await asyncio.wait_for(
                 asyncio.open_connection(self.host, self.port), timeout=10
