@@ -255,19 +255,18 @@ class SilverlineHoodCoordinator:
             
             # Define ONLY the changes for each command type
             command_changes = {
-                # Light commands - only change light-related values
-                "light_on": {"L": 2},
-                "light_off": {"L": 0},
-                
-                # Fan commands - only change motor value
-                "fan_off": {"M": 1},         # M:1 = AUS
-                "fan_speed_1": {"M": 2},     # M:2 = Stufe 1  
-                "fan_speed_2": {"M": 3},     # M:3 = Stufe 2
-                "fan_speed_3": {"M": 4},     # M:4 = Stufe 3
-                "fan_speed_4": {"M": 5},     # M:5 = Stufe 4
-                
-                # Status query
-                "status_query": {},  # Special case
+            # Light commands - KORRIGIERT
+            "light_on": {"L": 2},    # App sendet L:2 zum Einschalten
+            "light_off": {"L": 1},   # App sendet L:1 zum Ausschalten
+    
+            # Fan commands bleiben gleich
+            "fan_off": {"M": 1},         
+            "fan_speed_1": {"M": 2},     
+            "fan_speed_2": {"M": 3},     
+            "fan_speed_3": {"M": 4},     
+            "fan_speed_4": {"M": 5},     
+            
+            "status_query": {},
             }
             
             if command_type == "status_query":

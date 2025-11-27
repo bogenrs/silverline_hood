@@ -23,7 +23,7 @@ async def async_setup_entry(
 
 
 class SilverlineHoodLight(LightEntity):
-    """Light entity with smart RGBW support."""
+    """Light entity with corrected RGBW support."""
 
     def __init__(self, coordinator):
         """Initialize the light."""
@@ -52,7 +52,11 @@ class SilverlineHoodLight(LightEntity):
     @property
     def is_on(self) -> bool:
         """Return true if light is on."""
-        return self._coordinator.current_state.get("L", 0) == 2
+        light_state = self._coordinator.current_state.get("L", 1)
+        # KORRIGIERT: L:1=AUS, L:3=AN (nicht L:2!)
+        is_on = light_state == 3
+        _LOGGER.debug("Light state: L=%s, is_on=%s", light_state, is_on)
+        return is_on
 
     @property
     def brightness(self) -> Optional[int]:
@@ -77,7 +81,7 @@ class SilverlineHoodLight(LightEntity):
         return {
             "host": self._coordinator.host,
             "port": self._coordinator.port,
-            "current_light_state": state.get("L", 0),
+            "current_light_state": state.get("L", 1),
             "current_red": state.get("R", 45),
             "current_green": state.get("G", 255),
             "current_blue": state.get("B", 104),
@@ -89,7 +93,7 @@ class SilverlineHoodLight(LightEntity):
         """Turn on the light with dynamic colors."""
         _LOGGER.info("Light turn_on called with kwargs: %s", kwargs)
         
-        # Start with light on
+        # KORRIGIERT: App sendet L:2 zum Einschalten
         changes = {"L": 2}
         
         # Add brightness if specified
@@ -119,8 +123,8 @@ class SilverlineHoodLight(LightEntity):
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the light."""
         _LOGGER.info("Light turn_off called")
-        # Only change light, preserve everything else
-        result = await self._coordinator.send_smart_command({"L": 0})
+        # KORRIGIERT: App sendet L:1 zum Ausschalten
+        result = await self._coordinator.send_smart_command({"L": 1})
         if result:
             self.schedule_update_ha_state()
         else:
