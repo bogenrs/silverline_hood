@@ -56,8 +56,8 @@ class SilverlineHoodLight(CoordinatorEntity, LightEntity):
     def brightness(self) -> Optional[int]:
         """Return the brightness."""
         if not self.coordinator.data:
-            return 132
-        device_brg = self.coordinator.data.get("BRG", 132)
+            return 165  # Default middle value
+        device_brg = self.coordinator.data.get("BRG", 165)
         return self._convert_brightness_from_device(device_brg)
 
     @property
@@ -74,18 +74,18 @@ class SilverlineHoodLight(CoordinatorEntity, LightEntity):
         )
 
     def _convert_brightness_to_device(self, ha_brightness: int) -> int:
-        """Convert HA brightness (0-255) to device range (24-168)."""
-        # HA: 0-255 -> Device: 24-168
+        """Convert HA brightness (0-255) to device range (161-170)."""
+        # HA: 0-255 -> Device: 161-170 (nur 9 Stufen!)
         if ha_brightness <= 0:
-            return 24  # Minimum device brightness
-        return int(24 + (ha_brightness * (168 - 24) / 255))
+            return 161  # Minimum device brightness
+        return int(161 + (ha_brightness * (170 - 161) / 255))
 
     def _convert_brightness_from_device(self, device_brightness: int) -> int:
-        """Convert device brightness (24-168) to HA range (0-255)."""
-        # Device: 24-168 -> HA: 0-255
-        if device_brightness <= 24:
-            return 1  # Minimum HA brightness (not 0, as that means "off")
-        return int((device_brightness - 24) * 255 / (168 - 24))
+        """Convert device brightness (161-170) to HA range (0-255)."""
+        # Device: 161-170 -> HA: 0-255
+        if device_brightness <= 161:
+            return 1  # Minimum HA brightness
+        return int((device_brightness - 161) * 255 / (170 - 161))
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the light."""
