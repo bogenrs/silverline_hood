@@ -50,7 +50,7 @@ class SilverlineHoodLight(CoordinatorEntity, LightEntity):
         if not self.coordinator.data:
             return False
         light_state = self.coordinator.data.get("L", 1)
-        return light_state == 2
+        return light_state in [2, 3]  # On in both white (L:2) and RGB (L:3) mode
 
     @property
     def brightness(self) -> Optional[int]:
@@ -76,17 +76,37 @@ class SilverlineHoodLight(CoordinatorEntity, LightEntity):
         """Turn on the light."""
         _LOGGER.info("Light turn_on called: %s", kwargs)
         
-        changes = {"L": 2}
+        changes = {}
         
         if ATTR_BRIGHTNESS in kwargs:
             changes["BRG"] = kwargs[ATTR_BRIGHTNESS]
         
         if ATTR_RGBW_COLOR in kwargs:
             rgbw = kwargs[ATTR_RGBW_COLOR]
-            changes.update({
-                "R": rgbw[0], "G": rgbw[1], 
-                "B": rgbw[2], "CW": rgbw[3]
-            })
+            r, g, b, w = rgbw[0], rgbw[1], rgbw[2], rgbw[3]
+            
+            # Determine mode based on RGBW values
+            if r > 0 or g > 0 or b > 0:
+                # RGB mode - colors are being used
+                _LOGGER.debug("Using RGB mode (L:3) for colors R:%d G:%d B:%d", r, g, b)
+                changes.update({
+                    "L": 3,  # RGB mode
+                    "R": r, "G": g, "B": b,
+                    "CW": 0,  # Clear white in RGB mode
+                })
+            else:
+                # White mode - only white channel
+                _LOGGER.debug("Using White mode (L:2) for white value: %d", w)
+                changes.update({
+                    "L": 2,  # White mode
+                    "CW": w,
+                    "R": 0, "G": 0, "B": 0,  # Clear RGB in white mode
+                })
+        else:
+            # No color specified - use previous mode or default to white
+            if not self.coordinator.data or self.coordinator.data.get("L", 1) == 1:
+                changes["L"] = 2  # Default to white mode
+            # If device is already in L:2 or L:3, keep current mode
         
         await self.coordinator.send_smart_command(changes)
 
